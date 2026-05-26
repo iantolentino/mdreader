@@ -4,7 +4,7 @@
 
 MD Reader is a lightweight, client-side web application that allows users to view and interact with Markdown (.md) files. The application runs entirely in the browser without any server, database, or external dependencies beyond the initial CDN libraries. It provides a clean reading interface with automatic table of contents generation, dark mode support, and HTML export functionality.
 
-## Features
+## Features 
 
 - Local Markdown file upload via click, drag-and-drop, or file browser
 - Real-time Markdown rendering with GitHub-flavored Markdown support
