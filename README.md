@@ -1,4 +1,4 @@
-# MD Reader - Markdown Document Viewer
+# Markdown Document Viewer
 
 ## Overview
 
