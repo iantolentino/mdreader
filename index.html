@@ -6,8 +6,12 @@
     <title>MD Reader · Clean Markdown Viewer</title>
     <!-- Tailwind + Libs -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' };</script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+    <link id="hljs-light-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <link id="hljs-dark-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" disabled>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23ffffff'/%3E%3Ctext x='50' y='68' font-size='52' font-family='Arial, sans-serif' font-weight='bold' fill='%23000000' text-anchor='middle'%3EMD%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="asset/style.css">
 </head>
@@ -74,7 +78,7 @@
         <!-- Main Reading Area -->
         <div class="flex-1 flex flex-col min-w-0 w-full overflow-hidden">
             <!-- top bar -->
-            <div class="h-14 border-b bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm px-5 flex items-center justify-between sticky top-0 z-20">
+            <div class="h-14 border-b bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm px-5 flex items-center justify-between sticky top-0 z-20 relative">
                 <div class="flex items-center gap-3">
                     <button onclick="toggleSidebar()" class="lg:hidden p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-800 transition">
                         <i class="fa-solid fa-bars text-xl"></i>
@@ -85,6 +89,9 @@
                 </div>
 
                 <div class="flex items-center gap-2">
+                    <button onclick="toggleSearch()" class="p-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-800 transition text-gray-600 dark:text-gray-300" aria-label="Search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </button>
                     <button onclick="toggleTheme()" class="p-2.5 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-800 transition text-gray-600 dark:text-gray-300" aria-label="Theme">
                         <i id="theme-icon" class="fa-solid fa-moon"></i>
                     </button>
@@ -93,10 +100,27 @@
                         <span class="hidden sm:inline-block">Export HTML</span>
                     </button>
                 </div>
+                <div id="progress-bar" class="absolute bottom-0 left-0 h-[2px] bg-blue-600 dark:bg-blue-500" style="width:0%"></div>
+            </div>
+
+            <!-- search strip -->
+            <div id="search-bar" class="hidden border-b bg-white dark:bg-neutral-900 px-5 py-2.5 flex items-center gap-2 sticky top-14 z-20">
+                <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm"></i>
+                <input id="search-input" type="text" placeholder="Search in document…" class="flex-1 bg-transparent outline-none text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400">
+                <span id="search-count" class="text-xs text-gray-400 whitespace-nowrap">0/0</span>
+                <button onclick="searchStep(-1)" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-gray-300" aria-label="Previous match">
+                    <i class="fa-solid fa-chevron-up text-xs"></i>
+                </button>
+                <button onclick="searchStep(1)" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-gray-300" aria-label="Next match">
+                    <i class="fa-solid fa-chevron-down text-xs"></i>
+                </button>
+                <button onclick="toggleSearch(false)" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 text-gray-500 dark:text-gray-300" aria-label="Close search">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
             </div>
 
             <!-- scrollable reader container -->
-            <div class="flex-1 overflow-auto p-5 md:p-8 lg:p-10 bg-gray-50 dark:bg-neutral-950">
+            <div id="reader-scroll" class="flex-1 overflow-auto p-5 md:p-8 lg:p-10 bg-gray-50 dark:bg-neutral-950">
                 <div id="reader" class="markdown-body prose max-w-none"></div>
                 
                 <!-- Empty state -->

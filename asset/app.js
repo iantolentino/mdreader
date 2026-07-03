@@ -14,7 +14,10 @@
         // state
         let currentMarkdown = '';
         let currentFileName = '';
-        
+        let scrollSpyObserver = null;
+        let searchMatches = [];
+        let searchActiveIndex = -1;
+
         // DOM elements
         const readerDiv = document.getElementById('reader');
         const tocContainer = document.getElementById('toc');
@@ -25,6 +28,11 @@
         const currentFileBadge = document.getElementById('current-file');
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
+        const readerScroll = document.getElementById('reader-scroll');
+        const progressBar = document.getElementById('progress-bar');
+        const searchBar = document.getElementById('search-bar');
+        const searchInput = document.getElementById('search-input');
+        const searchCount = document.getElementById('search-count');
         
         // Helper: render full markdown
         function renderMarkdown(mdContent) {
@@ -37,18 +45,17 @@
                     parsedHtml.then(html => {
                         readerDiv.innerHTML = html;
                         currentMarkdown = mdContent;
-                        generateTOCFromDOM();
-                        scrollToTopIfNeeded();
+                        finalizeRender();
                     }).catch(e => {
                         console.warn(e);
                         readerDiv.innerHTML = `<div class="text-red-500 p-4">⚠️ Error parsing markdown</div>${marked.parse(mdContent)}`;
                         currentMarkdown = mdContent;
-                        generateTOCFromDOM();
+                        finalizeRender();
                     });
                 } else {
                     readerDiv.innerHTML = parsedHtml;
                     currentMarkdown = mdContent;
-                    generateTOCFromDOM();
+                    finalizeRender();
                 }
             } catch (err) {
                 console.error(err);
@@ -108,8 +115,180 @@
         
         // scroll to top helper after new load
         function scrollToTopIfNeeded() {
-            const scrollContainer = document.querySelector('.flex-1.overflow-auto');
-            if (scrollContainer) scrollContainer.scrollTop = 0;
+            if (readerScroll) readerScroll.scrollTop = 0;
+        }
+
+        // run all post-render enhancements in order
+        function finalizeRender() {
+            generateTOCFromDOM();
+            highlightCodeBlocks();
+            addCopyButtons();
+            setupScrollSpy();
+            closeSearch();
+            scrollToTopIfNeeded();
+            updateProgressBar();
+        }
+
+        // syntax highlighting for fenced code blocks
+        function highlightCodeBlocks() {
+            if (typeof hljs === 'undefined') return;
+            readerDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
+
+        // inject a copy-to-clipboard button on every code block
+        function addCopyButtons() {
+            readerDiv.querySelectorAll('pre').forEach((pre) => {
+                if (pre.querySelector('.copy-btn')) return;
+                pre.classList.add('relative', 'group');
+                const btn = document.createElement('button');
+                btn.className = 'copy-btn absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-lg bg-gray-200/80 dark:bg-neutral-700/80 text-gray-600 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-neutral-600';
+                btn.type = 'button';
+                btn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+                btn.addEventListener('click', () => {
+                    const code = pre.querySelector('code');
+                    const text = code ? code.innerText : pre.innerText;
+                    navigator.clipboard.writeText(text).then(() => {
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                        setTimeout(() => { btn.innerHTML = '<i class="fa-regular fa-copy"></i>'; }, 1500);
+                    }).catch(() => {
+                        btn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                        setTimeout(() => { btn.innerHTML = '<i class="fa-regular fa-copy"></i>'; }, 1500);
+                    });
+                });
+                pre.appendChild(btn);
+            });
+        }
+
+        // highlight the active TOC entry as the matching heading scrolls into view
+        function setupScrollSpy() {
+            if (scrollSpyObserver) {
+                scrollSpyObserver.disconnect();
+                scrollSpyObserver = null;
+            }
+            const headings = readerDiv.querySelectorAll('h1, h2, h3, h4');
+            if (!headings.length || !readerScroll) return;
+
+            scrollSpyObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) return;
+                    const link = tocContainer.querySelector(`a[href="#${CSS.escape(entry.target.id)}"]`);
+                    if (!link) return;
+                    tocContainer.querySelectorAll('.toc-link').forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+                });
+            }, { root: readerScroll, rootMargin: '0px 0px -80% 0px', threshold: 0 });
+
+            headings.forEach(h => scrollSpyObserver.observe(h));
+        }
+
+        // reading-progress bar bound to the reader scroll container
+        function updateProgressBar() {
+            if (!readerScroll || !progressBar) return;
+            const scrollable = readerScroll.scrollHeight - readerScroll.clientHeight;
+            const pct = scrollable > 0 ? (readerScroll.scrollTop / scrollable) * 100 : 0;
+            progressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+        }
+
+        // ===== In-document search =====
+        function toggleSearch(forceState) {
+            const show = forceState !== undefined ? forceState : searchBar.classList.contains('hidden');
+            if (show) {
+                searchBar.classList.remove('hidden');
+                searchInput.focus();
+            } else {
+                closeSearch();
+            }
+        }
+
+        function closeSearch() {
+            searchBar.classList.add('hidden');
+            searchInput.value = '';
+            clearSearchHighlights();
+            searchMatches = [];
+            searchActiveIndex = -1;
+            searchCount.textContent = '0/0';
+        }
+
+        function clearSearchHighlights() {
+            readerDiv.querySelectorAll('mark.search-hit').forEach((mark) => {
+                const parent = mark.parentNode;
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                parent.normalize();
+            });
+        }
+
+        function performSearch(query) {
+            clearSearchHighlights();
+            searchMatches = [];
+            searchActiveIndex = -1;
+
+            const trimmed = query.trim();
+            if (!trimmed) {
+                searchCount.textContent = '0/0';
+                return;
+            }
+
+            const walker = document.createTreeWalker(readerDiv, NodeFilter.SHOW_TEXT, {
+                acceptNode: (node) => node.parentElement && node.parentElement.closest('pre')
+                    ? NodeFilter.FILTER_REJECT
+                    : NodeFilter.FILTER_ACCEPT
+            });
+
+            const lowerQuery = trimmed.toLowerCase();
+            const textNodes = [];
+            let node;
+            while ((node = walker.nextNode())) {
+                if (node.textContent.toLowerCase().includes(lowerQuery)) textNodes.push(node);
+            }
+
+            textNodes.forEach((textNode) => {
+                const text = textNode.textContent;
+                const lowerText = text.toLowerCase();
+                const frag = document.createDocumentFragment();
+                let lastIndex = 0;
+                let idx = lowerText.indexOf(lowerQuery);
+                while (idx !== -1) {
+                    frag.appendChild(document.createTextNode(text.slice(lastIndex, idx)));
+                    const mark = document.createElement('mark');
+                    mark.className = 'search-hit';
+                    mark.textContent = text.slice(idx, idx + trimmed.length);
+                    frag.appendChild(mark);
+                    searchMatches.push(mark);
+                    lastIndex = idx + trimmed.length;
+                    idx = lowerText.indexOf(lowerQuery, lastIndex);
+                }
+                frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+                textNode.parentNode.replaceChild(frag, textNode);
+            });
+
+            if (searchMatches.length > 0) {
+                searchActiveIndex = 0;
+                setActiveMatch();
+            }
+            updateSearchCount();
+        }
+
+        function setActiveMatch() {
+            searchMatches.forEach(m => m.classList.remove('search-hit-active'));
+            const active = searchMatches[searchActiveIndex];
+            if (!active) return;
+            active.classList.add('search-hit-active');
+            active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function updateSearchCount() {
+            searchCount.textContent = searchMatches.length
+                ? `${searchActiveIndex + 1}/${searchMatches.length}`
+                : '0/0';
+        }
+
+        function searchStep(direction) {
+            if (!searchMatches.length) return;
+            searchActiveIndex = (searchActiveIndex + direction + searchMatches.length) % searchMatches.length;
+            setActiveMatch();
+            updateSearchCount();
         }
         
         // core file handler
@@ -150,6 +329,12 @@
             tocPlaceholder.classList.remove('hidden');
             // reset file input value to allow re-upload same file
             fileInput.value = '';
+            closeSearch();
+            if (scrollSpyObserver) {
+                scrollSpyObserver.disconnect();
+                scrollSpyObserver = null;
+            }
+            updateProgressBar();
         }
         
         // export as HTML (fully standalone)
@@ -249,13 +434,23 @@
                 icon.classList.add('fa-moon');
                 localStorage.setItem('mdreader_theme', 'light');
             }
+            applyHljsTheme(isDark);
         }
-        
+
+        function applyHljsTheme(isDark) {
+            const lightTheme = document.getElementById('hljs-light-theme');
+            const darkTheme = document.getElementById('hljs-dark-theme');
+            if (!lightTheme || !darkTheme) return;
+            lightTheme.disabled = isDark;
+            darkTheme.disabled = !isDark;
+        }
+
         function loadThemePreference() {
             const saved = localStorage.getItem('mdreader_theme');
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const icon = document.getElementById('theme-icon');
-            if (saved === 'dark' || (!saved && prefersDark)) {
+            const isDark = saved === 'dark' || (!saved && prefersDark);
+            if (isDark) {
                 document.documentElement.classList.add('dark');
                 icon.classList.remove('fa-moon');
                 icon.classList.add('fa-sun');
@@ -264,6 +459,7 @@
                 icon.classList.remove('fa-sun');
                 icon.classList.add('fa-moon');
             }
+            applyHljsTheme(isDark);
         }
         
         function toggleSidebar(forceState) {
@@ -317,10 +513,40 @@
                     if (sidebar.classList.contains('open')) sidebar.classList.remove('open');
                 }
             });
+
+            // reading progress bar
+            if (readerScroll) {
+                readerScroll.addEventListener('scroll', updateProgressBar);
+            }
+
+            // in-document search
+            if (searchInput) {
+                searchInput.addEventListener('input', (e) => performSearch(e.target.value));
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        searchStep(e.shiftKey ? -1 : 1);
+                    } else if (e.key === 'Escape') {
+                        closeSearch();
+                    }
+                });
+            }
+
+            // global shortcuts: Ctrl/Cmd+F opens in-document search, Esc closes it
+            window.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && currentMarkdown) {
+                    e.preventDefault();
+                    toggleSearch(true);
+                } else if (e.key === 'Escape' && !searchBar.classList.contains('hidden')) {
+                    closeSearch();
+                }
+            });
         };
-        
+
         // expose global functions
         window.clearFile = clearFile;
         window.toggleTheme = toggleTheme;
         window.downloadHTML = downloadHTML;
         window.toggleSidebar = toggleSidebar;
+        window.toggleSearch = toggleSearch;
+        window.searchStep = searchStep;

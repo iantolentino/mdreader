@@ -76,6 +76,39 @@
             background-color: #1f2937;
             border-left-color: #60a5fa;
         }
+        .toc-link.active {
+            background-color: #eff6ff;
+            border-left-color: #3b82f6;
+            color: #1d4ed8;
+            font-weight: 600;
+        }
+        .dark .toc-link.active {
+            background-color: rgba(96, 165, 250, 0.12);
+            border-left-color: #60a5fa;
+            color: #93c5fd;
+        }
+        /* in-document search highlights */
+        mark.search-hit {
+            background-color: #fef08a;
+            color: inherit;
+            border-radius: 3px;
+            padding: 0 1px;
+        }
+        mark.search-hit-active {
+            background-color: #fb923c;
+        }
+        .dark mark.search-hit {
+            background-color: #854d0e;
+        }
+        .dark mark.search-hit-active {
+            background-color: #c2410c;
+        }
+        /* copy button always visible on touch (no hover) devices */
+        @media (hover: none) {
+            .copy-btn {
+                opacity: 1 !important;
+            }
+        }
         /* responsive reader padding */
         @media (max-width: 640px) {
             .markdown-body {
